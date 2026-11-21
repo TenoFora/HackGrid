@@ -126,29 +126,27 @@ cd hackgrid
 ```
 
 ### 2. Initialize the MySQL Database
-Log into your MySQL shell or MySQL Workbench and run the schema and seed scripts:
-```bash
-mysql -u root -p -e "CREATE DATABASE hackgrid;"
-mysql -u root -p hackgrid < database/schema.sql
-mysql -u root -p hackgrid < database/seed.sql
-```
+Create a database named `hackgrid` and import `init/hackgrid_backup.sql` using MySQL Workbench or your preferred MySQL import tool. The dump drops and recreates its tables, so back up existing data first.
 
 ### 3. Configure Environment Variables
-Create a `.env` file in the root directory:
+Copy `.env.example` to `.env` in the project root and set your MySQL password and two separate random secrets. Do not commit `.env`.
 ```env
 PORT=5000
-DB_HOST=localhost
-DB_USER=root
 DB_PASSWORD=your_mysql_password
-DB_NAME=hackgrid
-JWT_SECRET=your_super_secret_jwt_key
+JWT_SECRET=at_least_32_random_characters
+PAYMENT_WEBHOOK_SECRET=a_separate_random_webhook_secret
 ```
 
 ### 4. Install Dependencies & Run
+Run the API and frontend in separate terminals:
 ```bash
 npm install
+npm run api
+```
+```bash
 npm run dev
 ```
+The API listens on `http://localhost:5000`; the Vite frontend is usually at `http://localhost:5173`.
 
 ---
 
@@ -156,15 +154,22 @@ npm run dev
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | Register a new user account |
-| `POST` | `/api/auth/login` | Authenticate user and issue JWT |
-| `GET` | `/api/events` | Browse published hackathons with live remaining seats |
-| `POST` | `/api/events` | Create a new hackathon (Authorized Organizer or College Admin) |
-| `POST` | `/api/teams` | Create a new hackathon team |
-| `POST` | `/api/teams/:id/members` | Add members to a team |
-| `POST` | `/api/registrations` | Reserve slots/seats (`HELD` state) for an individual or team |
-| `POST` | `/api/payments/webhook` | Verify payment gateway callback and `CONFIRM` booking |
-| `POST` | `/api/reviews` | Submit a verified post-hackathon rating and review |
+| `POST` | `/api/auth/register` | Create an account and return a bearer token |
+| `POST` | `/api/auth/login` | Authenticate and return a bearer token |
+| `POST` | `/api/organizers` | Register an organizer profile |
+| `POST` | `/api/colleges` | Register a college and make the caller its admin |
+| `POST` | `/api/events` | Create a draft or published event |
+| `GET` | `/api/events` | Browse published events; optional `search` and `city` query parameters |
+| `GET` | `/api/events/:id/availability` | Return capacity, booked places, and remaining places |
+| `POST` | `/api/teams` | Create a team; caller becomes its leader |
+| `POST` | `/api/teams/:id/members` | Add a user to a team |
+| `POST` | `/api/registrations` | Register an individual or team; paid events receive a 10-minute hold |
+| `POST` | `/api/registrations/:id/cancel` | Cancel a pending or held registration |
+| `POST` | `/api/payments` | Create a pending payment ledger record |
+| `POST` | `/api/payments/webhook` | Verify the configured webhook secret and process payment status |
+| `POST` | `/api/reviews` | Submit a review as a confirmed participant of a completed event |
+
+All routes except `GET /api/events`, `GET /api/events/:id/availability`, `POST /api/auth/register`, `POST /api/auth/login`, and the secret-protected payment webhook require `Authorization: Bearer <token>`. Send JSON fields matching the database names (for example `event_id`, `venue_id`, or `registration_id`). The payment endpoint creates a ledger attempt only; connect a payment provider before accepting real payments. The webhook expects `x-webhook-secret` and a JSON body containing `payment_id`, `status` (`SUCCESS` or `FAILED`), and optionally `transaction_id`.
 
 ---
 
