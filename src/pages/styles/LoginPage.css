@@ -1,0 +1,93 @@
+.login-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+/* The logo artwork has a black background, so the brand side stays dark in both themes. */
+.login-brand {
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  background: #050605;
+  border-right: 1px solid var(--border);
+}
+
+.login-brand img {
+  width: min(560px, 90%);
+}
+
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px clamp(24px, 6vw, 88px);
+  position: relative;
+}
+
+.login-back {
+  position: absolute;
+  top: 24px;
+  left: clamp(24px, 6vw, 88px);
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.login-back:hover {
+  color: var(--text);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 400px;
+  animation: page-in 0.4s var(--ease);
+}
+
+.login-form h1 {
+  font-size: 1.9rem;
+}
+
+.login-form > p.muted {
+  margin-top: -8px;
+}
+
+.login-switch {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .login-page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .login-brand {
+    padding: 28px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .login-brand img {
+    width: min(300px, 80%);
+  }
+
+  .login-panel {
+    justify-content: flex-start;
+    padding: 56px 16px 40px;
+  }
+
+  .login-back {
+    top: 18px;
+    left: 16px;
+  }
+
+  .login-form {
+    margin: 0 auto;
+  }
+}
