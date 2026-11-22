@@ -1,0 +1,51 @@
+.host {
+  max-width: 1000px;
+}
+
+.host .segmented {
+  align-self: flex-start;
+  margin-top: -12px;
+}
+
+.host-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+
+.host-form {
+  gap: 18px;
+  padding: 24px;
+}
+
+.host-form > .btn {
+  align-self: flex-start;
+}
+
+.host-aside {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Datetime inputs need room for the native picker; wrap instead of clipping. */
+.host-form .form-grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.host-aside .plain-list li {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 960px) {
+  .host-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .host-aside {
+    position: static;
+  }
+}
