@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { setToken, setUnauthorizedHandler } from '../api/client'
+import { useToast } from '../components/Toast'
 import { readJSON, removeKey, writeJSON } from '../lib/storage'
 
 const SESSION_KEY = 'hg.session'
@@ -23,12 +24,23 @@ function loadSession() {
   return session?.token ? session : null
 }
 
+function parse(raw) {
+  try {
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }) {
+  const notify = useToast()
   const [session, setSession] = useState(loadSession)
   const [data, setData] = useState(() =>
     session ? { ...EMPTY, ...readJSON(userKey(session.user.user_id), {}) } : EMPTY,
   )
   const [expired, setExpired] = useState(false)
+  // The last JSON this tab wrote, so the storage listener can ignore its own echo.
+  const lastWritten = useRef(null)
 
   const signIn = useCallback(({ user, token }) => {
     const next = { user, token }
@@ -50,12 +62,46 @@ export function AuthProvider({ children }) {
     setUnauthorizedHandler(() => {
       signOut()
       setExpired(true)
+      notify('Your session expired. Log in again to continue.', 'bad')
     })
-  }, [signOut])
+  }, [signOut, notify])
 
   useEffect(() => {
-    if (session) writeJSON(userKey(session.user.user_id), data)
+    if (!session) return
+    lastWritten.current = JSON.stringify(data)
+    writeJSON(userKey(session.user.user_id), data)
   }, [data, session])
+
+  // Keep several tabs in step. Without this, a tab holding stale data would
+  // overwrite bookings made in another tab the next time it saved, and logging
+  // out in one tab would leave the others signed in.
+  useEffect(() => {
+    function onStorage(event) {
+      if (event.storageArea !== localStorage) return
+
+      if (event.key === SESSION_KEY) {
+        const next = parse(event.newValue)
+        if (!next?.token) {
+          setToken(null)
+          setSession(null)
+          setData(EMPTY)
+        } else if (next.token !== session?.token) {
+          setToken(next.token)
+          setSession(next)
+          setData({ ...EMPTY, ...readJSON(userKey(next.user.user_id), {}) })
+          setExpired(false)
+        }
+        return
+      }
+
+      if (session && event.key === userKey(session.user.user_id)) {
+        if (event.newValue === lastWritten.current) return
+        setData({ ...EMPTY, ...parse(event.newValue) })
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [session])
 
   // upsert('teams', team, 'team_id') adds or merges a record by id.
   const upsert = useCallback((list, record, idKey) => {

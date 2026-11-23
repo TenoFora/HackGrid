@@ -4,8 +4,9 @@ import { api } from '../api/client'
 import { Button, CapacityMeter, EmptyState, FormError, Segmented, StatusPill } from '../components/ui'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../context/AuthContext'
+import { explainError } from '../lib/errors'
 import { countdown, dateTime, isPast, money, plural } from '../lib/format'
-import { addRecent, useAvailability, useNow } from '../lib/hooks'
+import { addRecent, useAvailability, useDocumentTitle, useNow } from '../lib/hooks'
 import { navigate } from '../lib/router'
 
 function LiveCapacity({ live, event }) {
@@ -43,7 +44,7 @@ function RegisterPanel({ event, live }) {
   const [mode, setMode] = useState(soloAllowed ? 'solo' : 'team')
   const [teamId, setTeamId] = useState(data.teams[0]?.team_id ?? '')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
 
   const existing = data.registrations.find(
     (r) =>
@@ -56,7 +57,8 @@ function RegisterPanel({ event, live }) {
   const team = data.teams.find((t) => String(t.team_id) === String(teamId))
   const teamSize = team ? 1 + (team.members?.length ?? 0) : 0
 
-  if (closed) {
+  // Someone who already registered keeps seeing their booking after the deadline.
+  if (closed && !existing) {
     return (
       <div className="panel">
         <h2>Registration closed</h2>
@@ -105,9 +107,9 @@ function RegisterPanel({ event, live }) {
 
   async function handleRegister(e) {
     e.preventDefault()
-    setError('')
+    setError(null)
     if (mode === 'team' && !team) {
-      setError('Choose a team first.')
+      setError({ message: 'Choose a team first.', hint: 'Create one on the Teams page if you have none yet.' })
       return
     }
     setBusy(true)
@@ -138,7 +140,7 @@ function RegisterPanel({ event, live }) {
       )
       live.refresh()
     } catch (err) {
-      setError(err.message)
+      setError(explainError(err, 'register'))
       live.refresh()
     } finally {
       setBusy(false)
@@ -151,7 +153,7 @@ function RegisterPanel({ event, live }) {
   return (
     <form className="panel" onSubmit={handleRegister}>
       <h2>Register</h2>
-      <FormError message={error} />
+      <FormError error={error} />
 
       {soloAllowed && teamAllowed && (
         <Segmented
@@ -210,8 +212,10 @@ function RegisterPanel({ event, live }) {
 }
 
 export default function EventPage({ id }) {
-  const [state, setState] = useState({ status: 'loading', event: null, error: '' })
-  const live = useAvailability(id)
+  const [state, setState] = useState({ status: 'loading', event: null, error: null })
+  // Only poll once the event is known to exist, so a bad link doesn't ping the API forever.
+  const live = useAvailability(id, { enabled: state.status === 'ready' })
+  useDocumentTitle(state.event?.event_name ?? 'Event')
 
   useEffect(() => {
     let cancelled = false
@@ -221,11 +225,11 @@ export default function EventPage({ id }) {
       .then(({ events }) => {
         if (cancelled) return
         const event = events.find((e) => String(e.event_id) === String(id))
-        setState({ status: event ? 'ready' : 'missing', event, error: '' })
+        setState({ status: event ? 'ready' : 'missing', event, error: null })
         if (event) addRecent(event)
       })
       .catch((err) => {
-        if (!cancelled) setState({ status: 'error', event: null, error: err.message })
+        if (!cancelled) setState({ status: 'error', event: null, error: explainError(err, 'load') })
       })
     return () => {
       cancelled = true
@@ -252,8 +256,8 @@ export default function EventPage({ id }) {
         }
       >
         {state.status === 'missing'
-          ? 'This hackathon is not published, or it no longer exists.'
-          : state.error}
+          ? "This hackathon isn't published, or it no longer exists. Check the link, or pick one from the list."
+          : `${state.error.message} ${state.error.hint}`}
       </EmptyState>
     )
   }

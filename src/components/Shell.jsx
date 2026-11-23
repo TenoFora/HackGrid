@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import logo from '../assets/Logo.png'
 import { useAuth } from '../context/AuthContext'
 import { initials } from '../lib/format'
-import { useRecents, useTheme } from '../lib/hooks'
+import { useNow, useRecents, useTheme } from '../lib/hooks'
 
 const NAV = [
   { to: '/', label: 'Explore' },
@@ -23,16 +23,47 @@ export default function Shell({ path, children }) {
   const { user, signOut, data } = useAuth()
   const recents = useRecents()
   const [theme, setTheme] = useTheme()
+  const sidebarRef = useRef(null)
+  const menuRef = useRef(null)
+  const contentRef = useRef(null)
+  const lastPath = useRef(path)
+
   // The mobile drawer belongs to the page it was opened on, so navigating closes it.
   const [openOn, setOpenOn] = useState(null)
   const open = openOn === path
   const setOpen = (value) => setOpenOn(value ? path : null)
 
-  const heldCount = data.registrations.filter((r) => r.registration_status === 'HELD').length
+  // Esc closes the drawer and hands focus back to the Menu button;
+  // opening it moves focus inside so keyboard users land on the links.
+  useEffect(() => {
+    if (!open) return undefined
+    sidebarRef.current?.querySelector('a')?.focus()
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      setOpenOn(null)
+      menuRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  // After navigating, move focus to the page so screen readers announce it and
+  // keyboard users don't start from the old position. Skipped on first load.
+  useEffect(() => {
+    if (lastPath.current === path) return
+    lastPath.current = path
+    contentRef.current?.focus({ preventScroll: true })
+  }, [path])
+
+  // A hold that has run out no longer needs payment, so it isn't counted.
+  const now = useNow(15000)
+  const heldCount = data.registrations.filter(
+    (r) => r.registration_status === 'HELD' && new Date(r.hold_expires_at).getTime() > now,
+  ).length
 
   return (
     <div className="shell" data-nav-open={open || undefined}>
-      <aside className="sidebar" aria-label="Main">
+      <aside className="sidebar" aria-label="Main" ref={sidebarRef}>
         <a href="#/" className="brand">
           <img src={logo} alt="" width="28" height="28" />
           <span>
@@ -117,7 +148,13 @@ export default function Shell({ path, children }) {
 
       <div className="main">
         <header className="topbar">
-          <button type="button" className="btn btn-ghost" onClick={() => setOpen(true)} aria-expanded={open}>
+          <button
+            type="button"
+            ref={menuRef}
+            className="btn btn-ghost"
+            onClick={() => setOpen(true)}
+            aria-expanded={open}
+          >
             Menu
           </button>
           <a href="#/" className="brand brand-small">
@@ -127,7 +164,7 @@ export default function Shell({ path, children }) {
             </span>
           </a>
         </header>
-        <main className="content" key={path}>
+        <main className="content" key={path} ref={contentRef} tabIndex={-1}>
           {children}
         </main>
       </div>
