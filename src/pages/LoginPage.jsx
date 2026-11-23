@@ -4,27 +4,54 @@ import logo from '../assets/LOGO_W_TEXT.png'
 import { api, optional } from '../api/client'
 import { Button, Field, FormError } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
+import { explainError } from '../lib/errors'
+import { useDocumentTitle } from '../lib/hooks'
 import { navigate } from '../lib/router'
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Returns { fieldId: message } for everything wrong, so the user sees all of it at once.
+function validate(form, isSignup) {
+  const errors = {}
+  if (isSignup && !form.name.trim()) errors.name = 'Enter your name so teammates can recognise you.'
+  if (!form.email.trim()) errors.email = 'Enter your email address.'
+  else if (!EMAIL.test(form.email.trim())) errors.email = 'That email looks incomplete. It should look like name@example.com.'
+  if (!form.password) errors.password = isSignup ? 'Choose a password.' : 'Enter your password.'
+  else if (isSignup && form.password.length < 8) errors.password = 'Use at least 8 characters.'
+  return errors
+}
 
 function LoginPage({ mode = 'login', next }) {
   const { signIn, expired, clearExpired } = useAuth()
   const isSignup = mode === 'signup'
+  useDocumentTitle(isSignup ? 'Create account' : 'Log in')
+
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' })
+  const [fieldErrors, setFieldErrors] = useState({})
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
 
   const destination = next && next.startsWith('/') ? next : '/'
   const otherHref = `#/${isSignup ? 'login' : 'signup'}${next ? `?next=${encodeURIComponent(next)}` : ''}`
 
-  const update = (key) => (event) => setForm((f) => ({ ...f, [key]: event.target.value }))
+  const update = (key) => (event) => {
+    setForm((f) => ({ ...f, [key]: event.target.value }))
+    // Clear a field's message as soon as the user starts fixing it.
+    setFieldErrors((errors) => (errors[key] ? { ...errors, [key]: undefined } : errors))
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
-    setError('')
-    if (isSignup && form.password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    setError(null)
+
+    const errors = validate(form, isSignup)
+    setFieldErrors(errors)
+    const firstBad = ['name', 'email', 'password'].find((id) => errors[id])
+    if (firstBad) {
+      document.getElementById(firstBad)?.focus()
       return
     }
+
     setBusy(true)
     try {
       const session = isSignup
@@ -39,7 +66,7 @@ function LoginPage({ mode = 'login', next }) {
       clearExpired()
       navigate(destination)
     } catch (err) {
-      setError(err.status === 409 ? 'An account with this email already exists. Try logging in.' : err.message)
+      setError(explainError(err, isSignup ? 'signup' : 'login'))
       setBusy(false)
     }
   }
@@ -63,19 +90,17 @@ function LoginPage({ mode = 'login', next }) {
               : 'Log in to register, manage your team, and track bookings.'}
           </p>
 
-          {expired && !error && (
-            <div className="form-note">Your session expired. Please log in again.</div>
-          )}
-          <FormError message={error} />
+          {expired && !error && <div className="form-note">Your session expired. Please log in again.</div>}
+          <FormError error={error} />
 
           {isSignup && (
-            <Field label="Full name" htmlFor="name">
-              <input id="name" autoComplete="name" required maxLength={100} value={form.name} onChange={update('name')} />
+            <Field label="Full name" htmlFor="name" error={fieldErrors.name}>
+              <input id="name" autoComplete="name" maxLength={100} value={form.name} onChange={update('name')} />
             </Field>
           )}
 
-          <Field label="Email" htmlFor="email">
-            <input id="email" type="email" autoComplete="email" required value={form.email} onChange={update('email')} />
+          <Field label="Email" htmlFor="email" error={fieldErrors.email}>
+            <input id="email" type="email" autoComplete="email" value={form.email} onChange={update('email')} />
           </Field>
 
           {isSignup && (
@@ -88,12 +113,12 @@ function LoginPage({ mode = 'login', next }) {
             label="Password"
             htmlFor="password"
             hint={isSignup ? 'At least 8 characters.' : undefined}
+            error={fieldErrors.password}
           >
             <input
               id="password"
               type="password"
               autoComplete={isSignup ? 'new-password' : 'current-password'}
-              required
               value={form.password}
               onChange={update('password')}
             />

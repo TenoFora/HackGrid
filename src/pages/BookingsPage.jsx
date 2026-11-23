@@ -4,8 +4,9 @@ import { api } from '../api/client'
 import { Button, EmptyState, FormError, PageHeader, StatusPill } from '../components/ui'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../context/AuthContext'
+import { errorText, explainError } from '../lib/errors'
 import { countdown, dateTime, money, plural } from '../lib/format'
-import { useNow } from '../lib/hooks'
+import { useDocumentTitle, useNow } from '../lib/hooks'
 
 const METHODS = [
   ['UPI', 'UPI'],
@@ -14,12 +15,16 @@ const METHODS = [
   ['WALLET', 'Wallet'],
 ]
 
+// What the user should be told, which can differ from the status last saved here.
+// A hold that has run out with no payment is simply expired. If a payment was
+// started, the gateway may still confirm it after the hold ends, and this device
+// has no endpoint to check, so "expired" would be a claim we can't back up.
 function effectiveStatus(registration, now) {
   if (
     registration.registration_status === 'HELD' &&
     new Date(registration.hold_expires_at).getTime() <= now
   ) {
-    return 'EXPIRED'
+    return registration.payment ? 'AWAITING' : 'EXPIRED'
   }
   return registration.registration_status
 }
@@ -29,12 +34,12 @@ function PaymentForm({ registration, onDone }) {
   const notify = useToast()
   const [method, setMethod] = useState('UPI')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
 
   async function handleSubmit(e) {
     e.preventDefault()
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       const payment = await api.createPayment({
         registration_id: registration.registration_id,
@@ -44,7 +49,7 @@ function PaymentForm({ registration, onDone }) {
       notify('Payment started. Your booking confirms once the gateway reports success.', 'good')
       onDone()
     } catch (err) {
-      setError(err.message)
+      setError(explainError(err, 'pay'))
     } finally {
       setBusy(false)
     }
@@ -52,7 +57,7 @@ function PaymentForm({ registration, onDone }) {
 
   return (
     <form className="booking-form" onSubmit={handleSubmit}>
-      <FormError message={error} />
+      <FormError error={error} />
       <fieldset className="method-grid">
         <legend>Payment method</legend>
         {METHODS.map(([value, label]) => (
@@ -86,16 +91,16 @@ function ReviewForm({ registration, onDone }) {
   const [rating, setRating] = useState(0)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!rating) {
-      setError('Pick a rating from 1 to 5.')
+      setError({ message: 'Pick a rating from 1 to 5.', hint: 'Tap one of the numbers above the comment box.' })
       return
     }
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       await api.createReview({
         event_id: registration.event_id,
@@ -106,7 +111,7 @@ function ReviewForm({ registration, onDone }) {
       notify('Thanks for the review.', 'good')
       onDone()
     } catch (err) {
-      setError(err.status === 409 && /already/i.test(err.message) ? 'You already reviewed this event.' : err.message)
+      setError(explainError(err, 'review'))
     } finally {
       setBusy(false)
     }
@@ -114,7 +119,7 @@ function ReviewForm({ registration, onDone }) {
 
   return (
     <form className="booking-form" onSubmit={handleSubmit}>
-      <FormError message={error} />
+      <FormError error={error} />
       <fieldset className="rating">
         <legend>Your rating</legend>
         {[1, 2, 3, 4, 5].map((n) => (
@@ -171,7 +176,7 @@ function BookingItem({ registration, now }) {
       upsert('registrations', { registration_id: registration.registration_id, ...result }, 'registration_id')
       notify('Booking cancelled. Your place was released.')
     } catch (err) {
-      notify(err.message, 'bad')
+      notify(errorText(err, 'cancel'), 'bad')
     } finally {
       setBusy(false)
       setConfirmCancel(false)
@@ -209,7 +214,16 @@ function BookingItem({ registration, now }) {
           waiting for gateway confirmation.
         </p>
       )}
-      {status === 'EXPIRED' && <p className="booking-note">The 10 minute hold ran out. Register again if places remain.</p>}
+      {status === 'AWAITING' && (
+        <p className="booking-note">
+          The 10 minute hold is over, but you had started a payment. If it went through, the organizer's system
+          confirms it separately and this device can't check yet. If you were charged and nothing changes, contact
+          the organizer.
+        </p>
+      )}
+      {status === 'EXPIRED' && (
+        <p className="booking-note">The 10 minute hold ran out before payment. Register again if places remain.</p>
+      )}
 
       {panel === 'pay' && <PaymentForm registration={registration} onDone={() => setPanel(null)} />}
       {panel === 'review' && <ReviewForm registration={registration} onDone={() => setPanel(null)} />}
@@ -253,10 +267,13 @@ function BookingItem({ registration, now }) {
 
 export default function BookingsPage() {
   const { data } = useAuth()
+  useDocumentTitle('My bookings')
   const now = useNow(1000)
   const bookings = data.registrations
 
-  const active = bookings.filter((r) => ['HELD', 'PENDING', 'CONFIRMED'].includes(effectiveStatus(r, now)))
+  const active = bookings.filter((r) =>
+    ['HELD', 'PENDING', 'CONFIRMED', 'AWAITING'].includes(effectiveStatus(r, now)),
+  )
   const past = bookings.filter((r) => !active.includes(r))
 
   return (

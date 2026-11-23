@@ -3,7 +3,9 @@ import './styles/ExplorePage.css'
 import { api } from '../api/client'
 import { CapacityMeter, EmptyState, SkeletonRows } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
+import { explainError } from '../lib/errors'
 import { dayMonth, greeting, isPast, money, plural } from '../lib/format'
+import { useDocumentTitle } from '../lib/hooks'
 
 function EventRow({ event }) {
   const { day, month } = dayMonth(event.start_time)
@@ -42,6 +44,7 @@ function EventRow({ event }) {
 
 export default function ExplorePage() {
   const { user } = useAuth()
+  useDocumentTitle('Explore hackathons')
   const [draft, setDraft] = useState('')
   const [filters, setFilters] = useState({ search: '', city: '' })
   const [cities, setCities] = useState([])
@@ -63,7 +66,7 @@ export default function ExplorePage() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setResult({ key: requestKey, status: 'error', events: [], error: err.message })
+        if (!cancelled) setResult({ key: requestKey, status: 'error', events: [], error: explainError(err, 'load') })
       })
     return () => {
       cancelled = true
@@ -140,7 +143,7 @@ export default function ExplorePage() {
               </button>
             }
           >
-            {state.error}
+            {state.error.message} {state.error.hint}
           </EmptyState>
         )}
 
