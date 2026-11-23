@@ -14,7 +14,7 @@ export function useNow(interval = 1000) {
 
 // Live capacity. The backend has no Socket.IO yet, so this polls the
 // availability endpoint every 10s while the tab is visible.
-export function useAvailability(eventId, interval = 10000) {
+export function useAvailability(eventId, { enabled = true, interval = 10000 } = {}) {
   const [state, setState] = useState({ data: null, error: null, updatedAt: null })
 
   const refresh = useCallback(async () => {
@@ -27,16 +27,32 @@ export function useAvailability(eventId, interval = 10000) {
   }, [eventId])
 
   useEffect(() => {
+    if (!enabled) return undefined
     // Syncing with an external system (the API); state is set after the fetch resolves.
     // eslint-disable-next-line react/set-state-in-effect
     refresh()
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') refresh()
     }, interval)
-    return () => clearInterval(id)
-  }, [refresh, interval])
+    // Catch up straight away when the tab comes back, instead of waiting for the next tick.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refresh, interval, enabled])
 
   return { ...state, refresh }
+}
+
+// Sets the browser tab title, e.g. "Teams | HackGrid".
+export function useDocumentTitle(title) {
+  useEffect(() => {
+    document.title = title ? `${title} | HackGrid` : 'HackGrid'
+  }, [title])
 }
 
 // Recently viewed events, shared across accounts on this device.

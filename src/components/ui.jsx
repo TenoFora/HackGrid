@@ -1,24 +1,48 @@
-// Small shared building blocks. Radius rule: controls 10px, panels 16px, pills full.
+import { Children, cloneElement, isValidElement } from 'react'
 
+// Small shared building blocks. Radius rule: controls 10px, panels 16px, status pills full.
+
+const FORM_CONTROLS = new Set(['input', 'select', 'textarea'])
+
+// Wires the label, hint and error to the control for screen readers:
+// aria-invalid and aria-describedby are added to a direct input/select/textarea child.
 export function Field({ label, htmlFor, hint, error, optional, children }) {
+  const describedBy = error ? `${htmlFor}-error` : hint ? `${htmlFor}-hint` : undefined
+  const control = Children.map(children, (child) =>
+    isValidElement(child) && FORM_CONTROLS.has(child.type)
+      ? cloneElement(child, { 'aria-invalid': error ? true : undefined, 'aria-describedby': describedBy })
+      : child,
+  )
+
   return (
     <div className="field">
       <label htmlFor={htmlFor}>
         {label}
         {optional && <span className="field-optional">Optional</span>}
       </label>
-      {children}
-      {hint && !error && <p className="field-hint">{hint}</p>}
-      {error && <p className="field-error">{error}</p>}
+      {control}
+      {hint && !error && (
+        <p className="field-hint" id={`${htmlFor}-hint`}>
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p className="field-error" id={`${htmlFor}-error`} role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
 
-export function FormError({ message }) {
-  if (!message) return null
+// `error` is a string or an { message, hint } object from explainError().
+export function FormError({ error }) {
+  if (!error) return null
+  const { message, hint } = typeof error === 'string' ? { message: error } : error
   return (
     <div className="form-error" role="alert">
-      {message}
+      <strong>{message}</strong>
+      {hint && <span className="form-error-hint">{hint}</span>}
     </div>
   )
 }
@@ -37,15 +61,16 @@ export function Button({ variant = 'primary', busy, children, className = '', ..
   )
 }
 
+// A group of toggle buttons (one active at a time). aria-pressed keeps it simple
+// for keyboards: every button is a normal tab stop, so no arrow-key handling is needed.
 export function Segmented({ options, value, onChange, label }) {
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
+    <div className="segmented" role="group" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
-          role="radio"
-          aria-checked={value === option.value}
+          aria-pressed={value === option.value}
           className={value === option.value ? 'is-active' : ''}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
@@ -63,15 +88,21 @@ const STATUS_TONE = {
   SUCCESS: 'good',
   HELD: 'warn',
   PENDING: 'warn',
+  AWAITING: 'warn',
   DRAFT: 'neutral',
   CANCELLED: 'neutral',
   EXPIRED: 'bad',
   FAILED: 'bad',
 }
 
+const STATUS_LABEL = { AWAITING: 'Awaiting confirmation' }
+
+// "CONFIRMED" -> "Confirmed". Only the first letter is capitalised.
+const sentenceCase = (word) => word.charAt(0) + word.slice(1).toLowerCase()
+
 export function StatusPill({ status, children }) {
   const tone = STATUS_TONE[status] ?? 'neutral'
-  return <span className={`pill pill-${tone}`}>{children ?? status.toLowerCase()}</span>
+  return <span className={`pill pill-${tone}`}>{children ?? STATUS_LABEL[status] ?? sentenceCase(status)}</span>
 }
 
 export function CapacityMeter({ remaining, capacity, compact }) {

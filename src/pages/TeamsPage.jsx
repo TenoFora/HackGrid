@@ -4,20 +4,32 @@ import { api } from '../api/client'
 import { Button, EmptyState, Field, FormError, PageHeader } from '../components/ui'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../context/AuthContext'
+import { errorText, explainError } from '../lib/errors'
 import { plural } from '../lib/format'
+import { useDocumentTitle } from '../lib/hooks'
 
 function AddMemberForm({ team }) {
-  const { upsert } = useAuth()
+  const { user, upsert } = useAuth()
   const notify = useToast()
   const [userId, setUserId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const inputId = `member-${team.team_id}`
 
   async function handleSubmit(e) {
     e.preventDefault()
     const id = userId.trim()
+    // These checks catch mistakes instantly, without waiting on the server.
     if (!/^[1-9]\d*$/.test(id)) {
-      setError('Enter the member\'s numeric user ID.')
+      setError('User IDs are whole numbers, like 12. Your teammate can copy theirs from their Teams page.')
+      return
+    }
+    if (id === String(user.user_id)) {
+      setError("That's your own ID. You're already on the team as its leader.")
+      return
+    }
+    if ((team.members ?? []).includes(id)) {
+      setError(`User ${id} is already on ${team.team_name}.`)
       return
     }
     setBusy(true)
@@ -28,7 +40,7 @@ function AddMemberForm({ team }) {
       notify(`User ${id} added to ${team.team_name}.`, 'good')
       setUserId('')
     } catch (err) {
-      setError(err.status === 409 ? 'That user is already on this team.' : err.message)
+      setError(errorText(err, 'addMember'))
     } finally {
       setBusy(false)
     }
@@ -38,16 +50,21 @@ function AddMemberForm({ team }) {
     <form className="inline-form" onSubmit={handleSubmit}>
       <Field
         label="Add a member by user ID"
-        htmlFor={`member-${team.team_id}`}
+        htmlFor={inputId}
         hint="Teammates find their ID at the bottom of the sidebar."
         error={error}
       >
         <div className="input-row">
           <input
-            id={`member-${team.team_id}`}
+            id={inputId}
             inputMode="numeric"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${inputId}-error` : `${inputId}-hint`}
             value={userId}
-            onChange={(e) => setUserId(e.target.value)}
+            onChange={(e) => {
+              setUserId(e.target.value)
+              if (error) setError('')
+            }}
           />
           <Button type="submit" variant="secondary" busy={busy}>
             Add
@@ -60,27 +77,29 @@ function AddMemberForm({ team }) {
 
 export default function TeamsPage() {
   const { user, data, upsert } = useAuth()
+  useDocumentTitle('Teams')
   const notify = useToast()
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
 
   async function handleCreate(e) {
     e.preventDefault()
     if (!name.trim()) {
-      setError('Give your team a name.')
+      setError({ message: 'Give your team a name.', hint: 'Organizers see this name on the registration.' })
+      document.getElementById('team-name')?.focus()
       return
     }
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       const team = await api.createTeam({ team_name: name.trim() })
       upsert('teams', { ...team, members: [] }, 'team_id')
       notify(`Team ${team.team_name} created. You are the leader.`, 'good')
       setName('')
     } catch (err) {
-      setError(err.message)
+      setError(explainError(err, 'createTeam'))
     } finally {
       setBusy(false)
     }
@@ -92,7 +111,7 @@ export default function TeamsPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
     } catch {
-      notify('Copy failed. Your ID is ' + user.user_id)
+      notify(`Your browser blocked copying. Your ID is ${user.user_id}.`)
     }
   }
 
@@ -103,7 +122,7 @@ export default function TeamsPage() {
       <div className="teams-grid">
         <form className="panel" onSubmit={handleCreate}>
           <h2>New team</h2>
-          <FormError message={error} />
+          <FormError error={error} />
           <Field label="Team name" htmlFor="team-name">
             <input id="team-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
